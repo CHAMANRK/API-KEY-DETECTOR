@@ -181,10 +181,29 @@ async function handleNvidia(apiKey, model, messages, res) {
   const r = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
     method:  'POST',
     headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ model, messages, max_tokens: 512 }),
+    body:    JSON.stringify({
+      model,
+      messages,
+      max_tokens: 512,
+      stream: false,          // Fix: NVIDIA defaults to streaming, force non-stream
+      temperature: 0.7,
+    }),
   });
-  const data = await r.json();
-  if (!r.ok) return res.status(r.status).json({ error: data.error?.message || 'NVIDIA error' });
+
+  // Fix: read raw text first — NVIDIA sometimes returns non-JSON on error
+  const rawText = await r.text();
+  let data;
+  try {
+    data = JSON.parse(rawText);
+  } catch(_) {
+    return res.status(r.status).json({ error: 'NVIDIA non-JSON response: ' + rawText.slice(0, 200) });
+  }
+
+  if (!r.ok) {
+    const errMsg = data.detail || data.error?.message || data.message || ('NVIDIA HTTP ' + r.status);
+    return res.status(r.status).json({ error: errMsg });
+  }
+
   return res.json({
     content: data.choices?.[0]?.message?.content || '',
     tokens:  data.usage?.total_tokens || null,
@@ -204,4 +223,4 @@ async function handleMistral(apiKey, model, messages, res) {
     content: data.choices?.[0]?.message?.content || '',
     tokens:  data.usage?.total_tokens || null,
   });
-}
+      }
